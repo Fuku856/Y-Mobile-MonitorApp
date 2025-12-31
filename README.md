@@ -1,4 +1,4 @@
-# 注意 / Note
+## 注意 / Note
 設定エリアにあなたのIDとパスワードを入力してください / Please enter your ID and password in the settings area.
 
 ## 必要なモノたち / Install requirements
