@@ -56,9 +56,16 @@ class YMobileRepository {
                 .build()
             
             val step2Resp = client.newCall(step2Req).execute()
-            return step2Resp.isSuccessful
-            // 成功判定はレスポンスURLやCookieの状態などで行う必要があるが、一旦ステータスコードで判定
-            // 実際はリダイレクトされるので、最終URLをチェックすると確実
+            if (!step2Resp.isSuccessful) return false
+
+            // 簡易チェック: ログイン画面に戻されていないか確認
+            // リダイレクトで login.php に戻っている場合は失敗とみなす
+            val finalUrl = step2Resp.request.url.toString()
+            if (finalUrl.contains("login.php")) {
+                return false
+            }
+            
+            return true
 
         } catch (e: IOException) {
             e.printStackTrace()
@@ -84,7 +91,8 @@ class YMobileRepository {
             val inputs = step3Soup.select("input[type=hidden]")
             
             if (inputs.size < 2) {
-                return Result.failure(Exception("Step 3 Failed: Missing hidden inputs (found: ${inputs.size})"))
+                val foundNames = inputs.map { it.attr("name") }.joinToString(", ")
+                return Result.failure(Exception("Step 3 Failed: Missing hidden inputs (found: ${inputs.size}, names: [$foundNames])"))
             }
             
             val mfiv = inputs[0].attr("value")
