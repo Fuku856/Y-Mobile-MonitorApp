@@ -69,24 +69,34 @@ class MainViewModel(
     fun fetchData() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLoading = true, error = null) }
-            val data = repository.fetchData()
-            if (data != null) {
+            val result = repository.fetchData()
+            
+            result.onSuccess { data ->
                 _uiState.update { it.copy(isLoading = false, data = data) }
-            } else {
+            }.onFailure { e ->
                 // セッション切れの可能性 -> 再ログイン試行
+                // メッセージに "Step 3" 等が含まれる場合はネットワーク/パースエラーの可能性が高いが、念のため再ログインも試す
                 val savedId = preferences.getUserId()
                 val savedPass = preferences.getPassword()
+                
                 if (savedId != null && savedPass != null) {
-                   val reloginSuccess = repository.login(savedId, savedPass)
-                   if (reloginSuccess) {
-                       val retryData = repository.fetchData()
-                       if (retryData != null) {
-                           _uiState.update { it.copy(isLoading = false, data = retryData) }
-                           return@launch
-                       }
-                   }
+                    // 再ログイン試行
+                    val reloginSuccess = repository.login(savedId, savedPass)
+                    if (reloginSuccess) {
+                        // 再取得
+                        val retryResult = repository.fetchData()
+                        retryResult.onSuccess { retryData ->
+                            _uiState.update { it.copy(isLoading = false, data = retryData) }
+                            return@launch
+                        }.onFailure { retryEx ->
+                             _uiState.update { it.copy(isLoading = false, error = "再取得失敗: ${retryEx.message}") }
+                             return@launch
+                        }
+                    }
                 }
-                _uiState.update { it.copy(isLoading = false, error = "データの取得に失敗しました") }
+                
+                // 再ログイン失敗または対象外
+                _uiState.update { it.copy(isLoading = false, error = "データ取得失敗: ${e.message}") }
             }
         }
     }

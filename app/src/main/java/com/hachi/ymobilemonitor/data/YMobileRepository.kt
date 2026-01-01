@@ -67,7 +67,7 @@ class YMobileRepository {
     }
 
     // データ取得処理
-    fun fetchData(): YMobileData? {
+    fun fetchData(): Result<YMobileData> {
         try {
             // 3. データ取得トークン取得
             val step3Req = Request.Builder()
@@ -75,11 +75,17 @@ class YMobileRepository {
                 .build()
             
             val step3Resp = client.newCall(step3Req).execute()
-            val step3Html = step3Resp.body?.string() ?: return null
+            if (!step3Resp.isSuccessful) {
+                return Result.failure(Exception("Step 3 Failed: HTTP ${step3Resp.code}"))
+            }
+
+            val step3Html = step3Resp.body?.string() ?: return Result.failure(Exception("Step 3 Failed: Empty Body"))
             val step3Soup = Jsoup.parse(step3Html)
             val inputs = step3Soup.select("input[type=hidden]")
             
-            if (inputs.size < 2) return null
+            if (inputs.size < 2) {
+                return Result.failure(Exception("Step 3 Failed: Missing hidden inputs (found: ${inputs.size})"))
+            }
             
             val mfiv = inputs[0].attr("value")
             val mfym = inputs[1].attr("value")
@@ -96,23 +102,31 @@ class YMobileRepository {
                 .build()
             
             val step4Resp = client.newCall(step4Req).execute()
-            val step4Html = step4Resp.body?.string() ?: return null
+            if (!step4Resp.isSuccessful) {
+                return Result.failure(Exception("Step 4 Failed: HTTP ${step4Resp.code}"))
+            }
+
+            val step4Html = step4Resp.body?.string() ?: return Result.failure(Exception("Step 4 Failed: Empty Body"))
             
             // 5. 解析
             return parseData(step4Html)
 
         } catch (e: Exception) {
             e.printStackTrace()
-            return null
+            return Result.failure(e)
         }
     }
 
-    private fun parseData(html: String): YMobileData? {
+    private fun parseData(html: String): Result<YMobileData> {
         try {
             val soup = Jsoup.parse(html)
-            val ds = soup.selectFirst(".list-toggle-content.js-toggle-content.m-top-20") ?: return null
+            val ds = soup.selectFirst(".list-toggle-content.js-toggle-content.m-top-20") 
+                ?: return Result.failure(Exception("Parse Failed: toggle content not found"))
+            
             val tables = ds.select("table")
-            if (tables.size < 4) return null
+            if (tables.size < 4) {
+                return Result.failure(Exception("Parse Failed: insufficient tables (found: ${tables.size})"))
+            }
 
             fun clean(text: String?) = text?.replace("\t", "")?.replace("\n", "")?.replace("GB", "")?.trim()?.toDoubleOrNull() ?: 0.0
 
@@ -135,7 +149,7 @@ class YMobileRepository {
             val total = kihon + kurikoshi
             val percentage = if (total > 0) (used / total) * 100 else 0.0
             
-            return YMobileData(
+            return Result.success(YMobileData(
                 remainingGb = (Math.round(remaining * 100.0) / 100.0),
                 totalGb = total,
                 usedGb = used,
@@ -144,11 +158,11 @@ class YMobileRepository {
                 kurikoshiGb = kurikoshi,
                 kihonGb = kihon,
                 yuryouGb = yuryou
-            )
+            ))
 
         } catch (e: Exception) {
             e.printStackTrace()
-            return null
+            return Result.failure(e)
         }
     }
 }
